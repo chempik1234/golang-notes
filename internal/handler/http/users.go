@@ -2,25 +2,25 @@ package http
 
 import (
 	"github.com/gofiber/fiber/v2"
-	"notes_service/internal/adapter/handler/schemas"
-	users2 "notes_service/internal/usecases/users"
-	"notes_service/internal/users"
+	"notes_service/internal/handler/schemas"
+	"notes_service/internal/models"
+	use_cases "notes_service/internal/usecases"
 )
 
 type UsersHandler struct {
-	useCase users2.UserCRUDUseCase
+	useCase use_cases.UserUseCase
 }
 
-func NewUsersHandler(useCase users2.UserCRUDUseCase) *UsersHandler {
+func NewUsersHandler(useCase use_cases.UserUseCase) *UsersHandler {
 	return &UsersHandler{useCase}
 }
 
-func (h *UsersHandler) GetUserByIdHandler(c *fiber.Ctx) error {
-	userId, err := ParseUUID(c, "id")
+func (h *UsersHandler) GetUserByIDHandler(c *fiber.Ctx) error {
+	userID, err := ParseUUID(c, "id")
 	if err != nil {
 		return BadRequest(c, "invalid user UUID")
 	}
-	user, err := h.useCase.GetUserById(userId)
+	user, err := h.useCase.GetUserByID(userID)
 	if err != nil {
 		return InternalServerError(c, err)
 	}
@@ -40,7 +40,7 @@ func (h *UsersHandler) GetUserByLoginHandler(c *fiber.Ctx) error {
 }
 
 func (h *UsersHandler) UpdateUserHandler(c *fiber.Ctx) error {
-	userId, err := ParseUUID(c, "id")
+	userID, err := ParseUUID(c, "id")
 	if err != nil {
 		return BadRequest(c, "invalid user UUID")
 	}
@@ -50,11 +50,11 @@ func (h *UsersHandler) UpdateUserHandler(c *fiber.Ctx) error {
 		return BadRequest(c, "invalid request body")
 	}
 
-	user := users.User{
+	user := models.User{
 		Login:    body.Login,
 		Password: body.Password,
 	}
-	updatedUser, err := h.useCase.UpdateUser(user, userId)
+	updatedUser, err := h.useCase.UpdateUser(user, userID)
 	if err != nil {
 		return InternalServerError(c, err)
 	}
@@ -62,12 +62,12 @@ func (h *UsersHandler) UpdateUserHandler(c *fiber.Ctx) error {
 }
 
 func (h *UsersHandler) DeleteUserHandler(c *fiber.Ctx) error {
-	userId, err := ParseUUID(c, "id")
+	userID, err := ParseUUID(c, "id")
 	if err != nil {
 		return BadRequest(c, "invalid user UUID")
 	}
 
-	if err := h.useCase.DeleteUser(userId); err != nil {
+	if err := h.useCase.DeleteUser(userID); err != nil {
 		return InternalServerError(c, err)
 	}
 	return c.Status(fiber.StatusNoContent).SendString("")

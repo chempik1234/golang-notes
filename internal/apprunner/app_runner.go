@@ -1,27 +1,27 @@
-package app_runner
+package apprunner
 
 import (
 	"context"
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/log"
 	"github.com/gofiber/fiber/v2/middleware/limiter"
-	"notes_service/internal/adapter/config"
-	"notes_service/internal/adapter/handler/http"
-	repository "notes_service/internal/adapter/storage/postgres/repositories"
-	redis2 "notes_service/internal/adapter/storage/redis"
-	notes2 "notes_service/internal/notes"
-	"notes_service/internal/usecases/notes"
-	"notes_service/internal/usecases/users"
+	"notes_service/config"
+	"notes_service/internal/handler/http"
+	"notes_service/internal/models"
+	"notes_service/internal/ports"
+	use_cases "notes_service/internal/usecases"
 	"notes_service/pkg/storage/postgres"
 	"notes_service/pkg/storage/redis"
 	"os/user"
 	"time"
 )
 
+// AutoMigration performs a migration for all models from models module
 func AutoMigration(db *postgres.DBInstance) error {
-	return db.Db.AutoMigrate(&notes2.Note{}, &user.User{})
+	return db.Db.AutoMigrate(&models.Note{}, &user.User{})
 }
 
+// RunApp sets up all connections and servers and returns an error when stops
 func RunApp(mainConfig *config.Configs) error {
 
 	ctx := context.Background()
@@ -41,18 +41,18 @@ func RunApp(mainConfig *config.Configs) error {
 		log.Fatal("couldn't connect to redis database", err)
 	}
 
-	redisStorage := redis2.NewRedisStorage(redisClient)
+	redisStorage := ports.NewRedisStorage(redisClient)
 
-	notesRepo := repository.NewNotesRepo(db)
-	notesUseCase := notes.NewNoteCRUDUseCase(notesRepo)
+	notesRepo := ports.NewNotesRepoDB(db)
+	notesUseCase := use_cases.NewNoteCRUDUseCase(notesRepo)
 	notesHandler := http.NewNotesHandler(*notesUseCase)
 
-	usersRepo := repository.NewUsersRepo(db)
-	usersUseCase := users.NewUserCRUDUseCase(usersRepo)
+	usersRepo := ports.NewUsersRepoDB(db)
+	usersUseCase := use_cases.NewUserCRUDUseCase(usersRepo)
+
 	usersHandler := http.NewUsersHandler(*usersUseCase)
 
-	authUseCase := users.NewUserAuthUseCase(usersRepo)
-	jwtHandler := http.NewJWTHandler(*authUseCase, *mainConfig.JWT)
+	jwtHandler := http.NewJWTHandler(*usersUseCase, *mainConfig.JWT)
 
 	app := fiber.New()
 
@@ -80,13 +80,13 @@ func RunApp(mainConfig *config.Configs) error {
 	protectedV1 := apiV1.Use("/protected", jwtHandler.JWTMiddleware())
 
 	protectedV1.Get("/notes/by-user/:id", notesHandler.ListNotesHandler)
-	protectedV1.Get("/notes/:id", notesHandler.GetNoteByIdHandler)
+	protectedV1.Get("/notes/:id", notesHandler.GetNoteByIDHandler)
 	protectedV1.Post("/notes", notesHandler.CreateNoteHandler)
 	protectedV1.Put("/notes/:id", notesHandler.UpdateNoteHandler)
 	protectedV1.Delete("/notes/:id", notesHandler.DeleteNoteHandler)
 	protectedV1.Get("/notes/count-by-user/:id", notesHandler.CountNotesByUserHandler)
 
-	protectedV1.Get("/users/:id", usersHandler.GetUserByIdHandler)
+	protectedV1.Get("/users/:id", usersHandler.GetUserByIDHandler)
 	protectedV1.Get("/users/by-login/:login", usersHandler.GetUserByLoginHandler)
 	protectedV1.Put("/users/:id", usersHandler.UpdateUserHandler)
 	protectedV1.Delete("/users/:id", usersHandler.DeleteUserHandler)

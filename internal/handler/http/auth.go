@@ -4,22 +4,26 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/google/uuid"
-	"notes_service/internal/adapter/config"
-	"notes_service/internal/adapter/handler/schemas"
-	users2 "notes_service/internal/usecases/users"
-	"notes_service/internal/users"
-	jwt2 "notes_service/pkg/auth/jwt"
+	"notes_service/config"
+	"notes_service/internal/handler/schemas"
+	"notes_service/internal/models"
+	"notes_service/internal/usecases"
+	"notes_service/pkg/auth/jwtutils"
 	"time"
 )
 
+// JWTHandler is the auth header for fiber application.
+// It has some values for creating JWT's and an auth use case
 type JWTHandler struct {
 	secretKey            string
 	accessTokenLifetime  time.Duration
 	refreshTokenLifetime time.Duration
-	useCase              users2.UserAuthUseCase
+	useCase              usecases.UserUseCase
 }
 
-func NewJWTHandler(useCase users2.UserAuthUseCase, jwtConfig config.JWT) *JWTHandler {
+// NewJWTHandler creates and returns a new instance of NewJWTHandler.
+// It accepts the use case and a config.JWT to extract values from.
+func NewJWTHandler(useCase usecases.UserUseCase, jwtConfig config.JWT) *JWTHandler {
 
 	return &JWTHandler{
 		secretKey:            jwtConfig.SecretKey,
@@ -29,6 +33,8 @@ func NewJWTHandler(useCase users2.UserAuthUseCase, jwtConfig config.JWT) *JWTHan
 	}
 }
 
+// JWTMiddleware is an auth middleware that checks the JWT with the validator
+// and use case that tries to find the user in the actual database.
 func (h *JWTHandler) JWTMiddleware() fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		authHeader := c.Get("Authorization")
@@ -37,7 +43,7 @@ func (h *JWTHandler) JWTMiddleware() fiber.Handler {
 		}
 
 		tokenString := authHeader[len("Bearer "):]
-		token, err := jwt2.ValidateToken(tokenString, h.secretKey)
+		token, err := jwtutils.ValidateToken(tokenString, h.secretKey)
 		if err != nil || !token.Valid {
 			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "invalid token"})
 		}
@@ -52,10 +58,15 @@ func (h *JWTHandler) JWTMiddleware() fiber.Handler {
 			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "token type must be access"})
 		}
 
-		userIDString, ok := claims["user_id"].(string)
+		userIDString, ok := claims["sub"].(string)
 		userID, err := uuid.Parse(userIDString)
 		if !ok || err != nil {
 			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "invalid user ID in token"})
+		}
+
+		_, err = h.useCase.GetUserByID(userID)
+		if err != nil {
+			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "can't find user with given user ID"})
 		}
 
 		c.Locals("userID", userID)
@@ -69,7 +80,7 @@ func (h *JWTHandler) SignUpHandler(c *fiber.Ctx) error {
 		return BadRequest(c, "invalid request body")
 	}
 
-	user := users.User{
+	user := models.User{
 		Login:    body.Login,
 		Password: body.Password,
 	}
@@ -78,7 +89,7 @@ func (h *JWTHandler) SignUpHandler(c *fiber.Ctx) error {
 		return InternalServerError(c, err)
 	}
 
-	accessToken, err := jwt2.GenerateToken(
+	accessToken, err := jwtutils.GenerateToken(
 		createdUser.ID,
 		createdUser.Login,
 		"access",
@@ -89,7 +100,7 @@ func (h *JWTHandler) SignUpHandler(c *fiber.Ctx) error {
 		return InternalServerError(c, err)
 	}
 
-	refreshToken, err := jwt2.GenerateToken(
+	refreshToken, err := jwtutils.GenerateToken(
 		createdUser.ID,
 		createdUser.Login,
 		"refresh",

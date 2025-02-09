@@ -2,8 +2,8 @@ package main
 
 import (
 	"github.com/gofiber/fiber/v2/log"
-	"notes_service/internal/adapter/config"
-	"notes_service/internal/app_runner"
+	"notes_service/config"
+	"notes_service/internal/apprunner"
 )
 
 func main() {
@@ -12,7 +12,7 @@ func main() {
 		log.Fatal("couldn't load configs", err)
 	}
 
-	err = app_runner.RunApp(mainConfig)
+	err = apprunner.RunApp(mainConfig)
 	if err != nil {
 		log.Fatal(err)
 	}

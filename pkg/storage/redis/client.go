@@ -5,8 +5,9 @@ import (
 	"github.com/gofiber/fiber/v2/log"
 )
 
-func NewRedisClient(redisUrl string) (*redis.Client, error) {
-	option, err := redis.ParseURL(redisUrl)
+// NewRedisClient try to connect to Redis and get the client
+func NewRedisClient(redisURL string) (*redis.Client, error) {
+	option, err := redis.ParseURL(redisURL)
 	if err != nil {
 		return nil, err
 	}

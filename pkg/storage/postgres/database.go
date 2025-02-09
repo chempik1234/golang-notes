@@ -7,13 +7,15 @@ import (
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
-	"notes_service/internal/adapter/config"
+	"notes_service/config"
 )
 
+// DBInstance is a structure for storing a database definition
 type DBInstance struct {
 	Db *gorm.DB
 }
 
+// NewDBInstance try to connect to the database and create a new DBInstance to use in repos
 func NewDBInstance(ctx context.Context, config *config.DB) (*DBInstance, error) {
 	dsn := fmt.Sprintf(
 		"host=%s user=%s dbname=%s sslmode=disable password=%s",

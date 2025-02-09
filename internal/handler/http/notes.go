@@ -3,38 +3,38 @@ package http
 import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
-	"notes_service/internal/adapter/handler/schemas"
-	"notes_service/internal/notes"
-	notes2 "notes_service/internal/usecases/notes"
+	"notes_service/internal/handler/schemas"
+	"notes_service/internal/models"
+	"notes_service/internal/usecases"
 	"strconv"
 )
 
 type NotesHandler struct {
-	useCase notes2.NoteCRUDUseCase
+	useCase usecases.NoteUseCase
 }
 
-func NewNotesHandler(useCase notes2.NoteCRUDUseCase) *NotesHandler {
+func NewNotesHandler(useCase usecases.NoteUseCase) *NotesHandler {
 	return &NotesHandler{useCase}
 }
 
 func (h *NotesHandler) ListNotesHandler(c *fiber.Ctx) error {
-	userId, err := strconv.Atoi(c.Params("id"))
+	userID, err := strconv.Atoi(c.Params("id"))
 	if err != nil {
 		return BadRequest(c, "invalid id")
 	}
-	result, err := h.useCase.GetNotesByUserId(uint(userId))
+	result, err := h.useCase.GetNotesByUserID(uint(userID))
 	if err != nil {
 		return InternalServerError(c, err)
 	}
 	return c.Status(fiber.StatusOK).JSON(result)
 }
 
-func (h *NotesHandler) GetNoteByIdHandler(c *fiber.Ctx) error {
-	noteId, err := strconv.Atoi(c.Params("id"))
+func (h *NotesHandler) GetNoteByIDHandler(c *fiber.Ctx) error {
+	noteID, err := strconv.Atoi(c.Params("id"))
 	if err != nil {
 		return BadRequest(c, "invalid note ID")
 	}
-	note, err := h.useCase.GetNoteById(uint(noteId))
+	note, err := h.useCase.GetNoteByID(uint(noteID))
 	if err != nil {
 		return InternalServerError(c, err)
 	}
@@ -46,8 +46,8 @@ func (h *NotesHandler) CreateNoteHandler(c *fiber.Ctx) error {
 	if err := c.BodyParser(&body); err != nil {
 		return BadRequest(c, "invalid request body")
 	}
-	note := notes.Note{
-		UserId:  body.UserId,
+	note := models.Note{
+		UserID:  body.UserID,
 		Title:   body.Title,
 		Content: body.Content,
 	}
@@ -59,7 +59,7 @@ func (h *NotesHandler) CreateNoteHandler(c *fiber.Ctx) error {
 }
 
 func (h *NotesHandler) UpdateNoteHandler(c *fiber.Ctx) error {
-	noteId, err := strconv.Atoi(c.Params("id"))
+	noteID, err := strconv.Atoi(c.Params("id"))
 	if err != nil {
 		return BadRequest(c, "invalid note ID")
 	}
@@ -68,13 +68,13 @@ func (h *NotesHandler) UpdateNoteHandler(c *fiber.Ctx) error {
 	if err := c.BodyParser(&body); err != nil {
 		return BadRequest(c, "invalid request body")
 	}
-	updatedNote := notes.Note{
-		UserId:  body.UserId,
+	updatedNote := models.Note{
+		UserID:  body.UserID,
 		Title:   body.Title,
 		Content: body.Content,
 	}
 
-	result, err := h.useCase.Update(updatedNote, uint(noteId))
+	result, err := h.useCase.Update(updatedNote, uint(noteID))
 	if err != nil {
 		return InternalServerError(c, err)
 	}
@@ -82,28 +82,28 @@ func (h *NotesHandler) UpdateNoteHandler(c *fiber.Ctx) error {
 }
 
 func (h *NotesHandler) DeleteNoteHandler(c *fiber.Ctx) error {
-	noteId, err := strconv.Atoi(c.Params("id"))
+	noteID, err := strconv.Atoi(c.Params("id"))
 	if err != nil {
 		return BadRequest(c, "invalid note ID")
 	}
-	if err := h.useCase.DeleteNote(uint(noteId)); err != nil {
+	if err := h.useCase.DeleteNote(uint(noteID)); err != nil {
 		return InternalServerError(c, err)
 	}
 	return c.Status(fiber.StatusNoContent).SendString("")
 }
 
 func (h *NotesHandler) CountNotesByUserHandler(c *fiber.Ctx) error {
-	userIdStr := c.Params("id")
-	if userIdStr == "" {
+	userIDStr := c.Params("id")
+	if userIDStr == "" {
 		return BadRequest(c, "user ID is required")
 	}
 
-	userId, err := uuid.Parse(userIdStr)
+	userID, err := uuid.Parse(userIDStr)
 	if err != nil {
 		return BadRequest(c, "invalid user ID")
 	}
 
-	count, err := h.useCase.CountNotesByUser(userId) // Преобразование uint в UUID
+	count, err := h.useCase.CountNotesByUser(userID) // Преобразование uint в UUID
 	if err != nil {
 		return InternalServerError(c, err)
 	}
