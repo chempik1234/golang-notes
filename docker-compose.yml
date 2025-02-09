@@ -12,6 +12,7 @@ services:
     # command: go run cmd/main.go -b 0.0.0.0
     depends_on:
       - db
+      - cache
   db:
     image: postgres:15.1
     restart: always
@@ -32,6 +33,18 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+  cache:
+    image: redis:latest
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: [ "CMD-SHELL", "redis-cli ping" ]
+      interval: 5s
+      timeout: 1s
+      retries: 3
 
 volumes:
   db-data:
+  redis-data:

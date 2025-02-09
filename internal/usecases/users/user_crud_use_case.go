@@ -1,12 +1,19 @@
 package users
 
-import "notes_service/internal/users"
+import (
+	"github.com/google/uuid"
+	"notes_service/internal/users"
+)
 
 type UserCRUDUseCase struct {
 	usersRepo users.UsersRepo
 }
 
-func (u *UserCRUDUseCase) GetUserById(userId uint) (users.User, error) {
+func NewUserCRUDUseCase(usersRepo users.UsersRepo) *UserCRUDUseCase {
+	return &UserCRUDUseCase{usersRepo: usersRepo}
+}
+
+func (u *UserCRUDUseCase) GetUserById(userId uuid.UUID) (users.User, error) {
 	return u.usersRepo.GetUserById(userId)
 }
 
@@ -18,10 +25,10 @@ func (u *UserCRUDUseCase) CreateUser(user users.User) (users.User, error) {
 	return u.usersRepo.CreateUser(user)
 }
 
-func (u *UserCRUDUseCase) UpdateUser(user users.User, userId uint) (users.User, error) {
+func (u *UserCRUDUseCase) UpdateUser(user users.User, userId uuid.UUID) (users.User, error) {
 	return u.usersRepo.UpdateUser(user, userId)
 }
 
-func (u *UserCRUDUseCase) DeleteUser(userId uint) error {
+func (u *UserCRUDUseCase) DeleteUser(userId uuid.UUID) error {
 	return u.usersRepo.DeleteUser(userId)
 }

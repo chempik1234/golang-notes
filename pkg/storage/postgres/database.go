@@ -3,20 +3,18 @@ package postgres
 import (
 	"context"
 	"fmt"
+	"github.com/gofiber/fiber/v2/log"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
-	"log"
 	"notes_service/internal/adapter/config"
-	"notes_service/internal/notes"
-	"notes_service/internal/users"
 )
 
 type DBInstance struct {
 	Db *gorm.DB
 }
 
-func New(ctx context.Context, config *config.DB) (*DBInstance, error) {
+func NewDBInstance(ctx context.Context, config *config.DB) (*DBInstance, error) {
 	dsn := fmt.Sprintf(
 		"host=%s user=%s dbname=%s sslmode=disable password=%s",
 		config.DbHost,
@@ -32,7 +30,7 @@ func New(ctx context.Context, config *config.DB) (*DBInstance, error) {
 		log.Fatal("Failed to connect to databse. \n", connErr)
 	}
 
-	log.Printf("connected to the database")
+	log.Info("connected to the postgresql database")
 	db.Logger = logger.Default.LogMode(logger.Info)
 
 	/*
@@ -45,11 +43,4 @@ func New(ctx context.Context, config *config.DB) (*DBInstance, error) {
 
 	DB := DBInstance{db}
 	return &DB, nil
-}
-
-func (db *DBInstance) AutoMigrate() error {
-	return db.Db.AutoMigrate(
-		&users.User{},
-		&notes.Note{},
-	)
 }

@@ -3,6 +3,7 @@ package http
 import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
+	"notes_service/internal/adapter/handler/schemas"
 	"notes_service/internal/notes"
 	notes2 "notes_service/internal/usecases/notes"
 	"strconv"
@@ -41,9 +42,14 @@ func (h *NotesHandler) GetNoteByIdHandler(c *fiber.Ctx) error {
 }
 
 func (h *NotesHandler) CreateNoteHandler(c *fiber.Ctx) error {
-	var note notes.Note
-	if err := c.BodyParser(&note); err != nil {
+	var body schemas.NoteBodySchema
+	if err := c.BodyParser(&body); err != nil {
 		return BadRequest(c, "invalid request body")
+	}
+	note := notes.Note{
+		UserId:  body.UserId,
+		Title:   body.Title,
+		Content: body.Content,
 	}
 	createdNote, err := h.useCase.Create(note)
 	if err != nil {
@@ -58,9 +64,14 @@ func (h *NotesHandler) UpdateNoteHandler(c *fiber.Ctx) error {
 		return BadRequest(c, "invalid note ID")
 	}
 
-	var updatedNote notes.Note
-	if err := c.BodyParser(&updatedNote); err != nil {
+	var body schemas.NoteBodySchema
+	if err := c.BodyParser(&body); err != nil {
 		return BadRequest(c, "invalid request body")
+	}
+	updatedNote := notes.Note{
+		UserId:  body.UserId,
+		Title:   body.Title,
+		Content: body.Content,
 	}
 
 	result, err := h.useCase.Update(updatedNote, uint(noteId))

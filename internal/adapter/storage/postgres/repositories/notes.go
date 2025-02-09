@@ -2,8 +2,8 @@ package repository
 
 import (
 	"github.com/google/uuid"
-	"notes_service/internal/adapter/storage/postgres"
 	"notes_service/internal/notes"
+	"notes_service/pkg/storage/postgres"
 )
 
 type NotesRepo struct {
