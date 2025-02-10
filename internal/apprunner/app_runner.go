@@ -2,6 +2,7 @@ package apprunner
 
 import (
 	"context"
+	"fmt"
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/log"
 	"github.com/gofiber/fiber/v2/middleware/limiter"
@@ -10,6 +11,7 @@ import (
 	"notes_service/internal/models"
 	"notes_service/internal/ports"
 	use_cases "notes_service/internal/usecases"
+	"notes_service/pkg/auth/password"
 	"notes_service/pkg/storage/postgres"
 	"notes_service/pkg/storage/redis"
 	"os/user"
@@ -47,12 +49,14 @@ func RunApp(mainConfig *config.Configs) error {
 	notesUseCase := use_cases.NewNoteCRUDUseCase(notesRepo)
 	notesHandler := http.NewNotesHandler(*notesUseCase)
 
-	usersRepo := ports.NewUsersRepoDB(db)
+	passwordManager := password.NewPasswordManagerBcrypt()
+
+	usersRepo := ports.NewUsersRepoDB(db, passwordManager)
 	usersUseCase := use_cases.NewUserCRUDUseCase(usersRepo)
 
 	usersHandler := http.NewUsersHandler(*usersUseCase)
 
-	jwtHandler := http.NewJWTHandler(*usersUseCase, *mainConfig.JWT)
+	jwtHandler := http.NewJWTHandler(usersUseCase, *mainConfig.JWT)
 
 	app := fiber.New()
 
@@ -75,9 +79,12 @@ func RunApp(mainConfig *config.Configs) error {
 
 	apiV1 := app.Group("/api/v1")
 
-	apiV1.Post("/users", jwtHandler.SignUpHandler)
+	apiV1.Post("/sign-up", jwtHandler.SignUpHandler)
+	apiV1.Post("/sign-in", jwtHandler.SignInHandler)
+	apiV1.Post("/refresh", jwtHandler.RefreshHandler)
 
-	protectedV1 := apiV1.Use("/protected", jwtHandler.JWTMiddleware())
+	protectedV1 := apiV1.Group("/protected")
+	protectedV1.Use(jwtHandler.JWTMiddleware())
 
 	protectedV1.Get("/notes/by-user/:id", notesHandler.ListNotesHandler)
 	protectedV1.Get("/notes/:id", notesHandler.GetNoteByIDHandler)
@@ -86,10 +93,16 @@ func RunApp(mainConfig *config.Configs) error {
 	protectedV1.Delete("/notes/:id", notesHandler.DeleteNoteHandler)
 	protectedV1.Get("/notes/count-by-user/:id", notesHandler.CountNotesByUserHandler)
 
+	protectedV1.Get("/users/me", usersHandler.GetCurrentUserHandler)
 	protectedV1.Get("/users/:id", usersHandler.GetUserByIDHandler)
 	protectedV1.Get("/users/by-login/:login", usersHandler.GetUserByLoginHandler)
 	protectedV1.Put("/users/:id", usersHandler.UpdateUserHandler)
 	protectedV1.Delete("/users/:id", usersHandler.DeleteUserHandler)
+
+	routes := app.GetRoutes()
+	for _, route := range routes {
+		fmt.Printf("%s %s\n", route.Method, route.Path)
+	}
 
 	log.Info("Listening on port " + mainConfig.HTTP.Port)
 	log.Info("Redis on " + mainConfig.Redis.URL)
