@@ -52,7 +52,7 @@ func RunApp(mainConfig *config.Configs) error {
 
 	usersHandler := http.NewUsersHandler(*usersUseCase)
 
-	jwtHandler := http.NewJWTHandler(*usersUseCase, *mainConfig.JWT)
+	jwtHandler := http.NewJWTHandler(usersUseCase, *mainConfig.JWT)
 
 	app := fiber.New()
 

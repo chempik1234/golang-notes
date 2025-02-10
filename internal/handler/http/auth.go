@@ -7,10 +7,16 @@ import (
 	"notes_service/config"
 	"notes_service/internal/handler/schemas"
 	"notes_service/internal/models"
-	"notes_service/internal/usecases"
 	"notes_service/pkg/auth/jwtutils"
 	"time"
 )
+
+// AuthUseCase Use case interface required for JWTHandler
+type AuthUseCase interface {
+	GetUserByID(userID uuid.UUID) (models.User, error)
+	CreateUser(user models.User) (models.User, error)
+	GetUserByLoginAndPassword(login string, password string) (models.User, error)
+}
 
 // JWTHandler is the auth header for fiber application.
 // It has some values for creating JWT's and an auth use case
@@ -18,12 +24,12 @@ type JWTHandler struct {
 	secretKey            string
 	accessTokenLifetime  time.Duration
 	refreshTokenLifetime time.Duration
-	useCase              usecases.UserUseCase
+	useCase              AuthUseCase
 }
 
 // NewJWTHandler creates and returns a new instance of NewJWTHandler.
 // It accepts the use case and a config.JWT to extract values from.
-func NewJWTHandler(useCase usecases.UserUseCase, jwtConfig config.JWT) *JWTHandler {
+func NewJWTHandler(useCase AuthUseCase, jwtConfig config.JWT) *JWTHandler {
 
 	return &JWTHandler{
 		secretKey:            jwtConfig.SecretKey,
@@ -74,45 +80,82 @@ func (h *JWTHandler) JWTMiddleware() fiber.Handler {
 	}
 }
 
-func (h *JWTHandler) SignUpHandler(c *fiber.Ctx) error {
+func (h *JWTHandler) parseUser(c *fiber.Ctx) (models.User, error) {
 	var body schemas.UserBodySchema
 	if err := c.BodyParser(&body); err != nil {
-		return BadRequest(c, "invalid request body")
+		return models.User{}, err
 	}
 
 	user := models.User{
 		Login:    body.Login,
 		Password: body.Password,
 	}
-	createdUser, err := h.useCase.CreateUser(user)
-	if err != nil {
-		return InternalServerError(c, err)
-	}
+	return user, nil
+}
 
+func (h *JWTHandler) createTokensForUser(user models.User) (fiber.Map, error) {
 	accessToken, err := jwtutils.GenerateToken(
-		createdUser.ID,
-		createdUser.Login,
+		user.ID,
+		user.Login,
 		"access",
 		h.accessTokenLifetime,
 		h.secretKey,
 	)
 	if err != nil {
-		return InternalServerError(c, err)
+		return nil, err
 	}
 
 	refreshToken, err := jwtutils.GenerateToken(
-		createdUser.ID,
-		createdUser.Login,
+		user.ID,
+		user.Login,
 		"refresh",
 		h.refreshTokenLifetime,
 		h.secretKey,
 	)
 	if err != nil {
+		return nil, err
+	}
+
+	return fiber.Map{
+		"accessToken":  accessToken,
+		"refreshToken": refreshToken,
+	}, nil
+}
+
+func (h *JWTHandler) SignUpHandler(c *fiber.Ctx) error {
+	user, err := h.parseUser(c)
+	if err != nil {
+		return BadRequest(c, "invalid user data")
+	}
+
+	createdUser, err := h.useCase.CreateUser(user)
+	if err != nil {
 		return InternalServerError(c, err)
 	}
 
-	return c.Status(fiber.StatusOK).JSON(fiber.Map{
-		"accessToken":  accessToken,
-		"refreshToken": refreshToken,
-	})
+	returnData, err := h.createTokensForUser(createdUser)
+	if err != nil {
+		return InternalServerError(c, err)
+	}
+
+	return c.Status(fiber.StatusOK).JSON(returnData)
+}
+
+func (h *JWTHandler) Login(c *fiber.Ctx) error {
+	user, err := h.parseUser(c)
+	if err != nil {
+		return BadRequest(c, "invalid user data")
+	}
+
+	foundUser, err := h.useCase.GetUserByLoginAndPassword(user.Login, user.Password)
+	if err != nil {
+		return NotAuthenticatedError(c)
+	}
+
+	returnData, err := h.createTokensForUser(foundUser)
+	if err != nil {
+		return InternalServerError(c, err)
+	}
+
+	return c.JSON(returnData)
 }
