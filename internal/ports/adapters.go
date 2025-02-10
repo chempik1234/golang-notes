@@ -1,11 +1,13 @@
 package ports
 
 import (
+	"errors"
 	"github.com/go-redis/redis/v7"
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
-	"golang.org/x/crypto/bcrypt"
+	"gorm.io/gorm"
 	"notes_service/internal/models"
+	"notes_service/pkg/auth/password"
 	"notes_service/pkg/storage/postgres"
 	"time"
 )
@@ -25,17 +27,23 @@ func NewNotesRepoDB(db *postgres.DBInstance) *NotesRepoDB {
 }
 
 // GetNotesByUserID retrieves all notes associated with a specific user ID.
-func (r *NotesRepoDB) GetNotesByUserID(userID uint) ([]models.Note, error) {
+func (r *NotesRepoDB) GetNotesByUserID(userID uuid.UUID) ([]models.Note, error) {
 	var notesList []models.Note
 	r.db.Db.Find(&notesList, "user_id = ?", userID)
 	return notesList, nil
 }
 
 // GetNoteByID retrieves a single note by its unique ID.
-func (r *NotesRepoDB) GetNoteByID(noteID uint) (models.Note, error) {
+func (r *NotesRepoDB) GetNoteByID(noteID uint) (models.Note, bool, error) {
 	var note models.Note
-	r.db.Db.First(&note, noteID)
-	return note, nil
+	result := r.db.Db.First(&note, noteID)
+	if result.Error != nil {
+		if errors.Is(result.Error, gorm.ErrRecordNotFound) {
+			return note, false, nil
+		}
+		return note, false, result.Error
+	}
+	return note, true, nil
 }
 
 // CreateNote creates a new note and saves it to the database.
@@ -69,19 +77,23 @@ func (r *NotesRepoDB) CountNotesByUser(noteID uuid.UUID) (int64, error) {
 
 // UsersRepoDB represents a repository interface for interacting with the Users database.
 type UsersRepoDB struct {
-	db *postgres.DBInstance // Database instance for executing queries.
+	db              *postgres.DBInstance     // Database instance for executing queries.
+	passwordManager password.PasswordManager // Password utils instance for generating and checking passwords
 }
 
 var _ UsersRepo = (*UsersRepoDB)(nil)
 
 // NewUsersRepoDB initializes and returns a new UsersRepoDB instance.
-func NewUsersRepoDB(db *postgres.DBInstance) *UsersRepoDB {
-	return &UsersRepoDB{db}
+func NewUsersRepoDB(db *postgres.DBInstance, passwordManager password.PasswordManager) *UsersRepoDB {
+	return &UsersRepoDB{
+		db,
+		passwordManager,
+	}
 }
 
 // SetPassword hashes the password for a user using bcrypt and sets it in the user object.
-func SetPassword(user *models.User) error {
-	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(user.Password), bcrypt.DefaultCost)
+func (r *UsersRepoDB) SetPassword(user *models.User) error {
+	hashedPassword, err := r.passwordManager.GeneratePassword(user.Password)
 	if err != nil {
 		return err
 	}
@@ -90,32 +102,49 @@ func SetPassword(user *models.User) error {
 }
 
 // GetUserByID retrieves a user by their unique UUID.
-func (r *UsersRepoDB) GetUserByID(userID uuid.UUID) (models.User, error) {
+func (r *UsersRepoDB) GetUserByID(userID uuid.UUID) (models.User, bool, error) {
 	var user models.User
 	result := r.db.Db.First(&user, userID)
-	err := result.Error
-	return user, err
+	if result.Error != nil {
+		if errors.Is(result.Error, gorm.ErrRecordNotFound) {
+			return user, false, nil
+		}
+		return user, false, result.Error
+	}
+	return user, true, nil
 }
 
 // GetUserByLogin retrieves a user by their login name.
-func (r *UsersRepoDB) GetUserByLogin(login string) (models.User, error) {
+func (r *UsersRepoDB) GetUserByLogin(login string) (models.User, bool, error) {
 	var user models.User
 	result := r.db.Db.First(&user, "login = ?", login)
-	err := result.Error
-	return user, err
+	if result.Error != nil {
+		if errors.Is(result.Error, gorm.ErrRecordNotFound) {
+			return user, false, nil
+		}
+		return user, false, result.Error
+	}
+	return user, true, nil
 }
 
 // GetUserByLoginAndPassword retrieves a user by their login name and password.
-func (r *UsersRepoDB) GetUserByLoginAndPassword(login string, password string) (models.User, error) {
+func (r *UsersRepoDB) GetUserByLoginAndPassword(login string, password string) (models.User, bool, error) {
 	var user models.User
-	result := r.db.Db.First(&user, "login = ? AND password = ?", login, password)
-	err := result.Error
-	return user, err
+	result := r.db.Db.First(&user, "login = ?", login)
+	if result.Error != nil {
+		if errors.Is(result.Error, gorm.ErrRecordNotFound) {
+			return user, false, nil
+		}
+		return user, false, result.Error
+	} else if passwordsEqual, err := r.passwordManager.CheckPassword(password, user.Password); !passwordsEqual || err != nil {
+		return user, false, nil
+	}
+	return user, true, nil
 }
 
 // CreateUser creates a new user and saves it to the database, hashing the password before saving.
 func (r *UsersRepoDB) CreateUser(user models.User) (models.User, error) {
-	err := SetPassword(&user)
+	err := r.SetPassword(&user)
 	if err != nil {
 		return models.User{}, err
 	}
@@ -125,7 +154,7 @@ func (r *UsersRepoDB) CreateUser(user models.User) (models.User, error) {
 
 // UpdateUser updates an existing user in the database based on their UUID, rehashing the password if changed.
 func (r *UsersRepoDB) UpdateUser(user models.User, userID uuid.UUID) (models.User, error) {
-	err := SetPassword(&user)
+	err := r.SetPassword(&user)
 	if err != nil {
 		return models.User{}, err
 	}

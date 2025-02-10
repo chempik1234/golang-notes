@@ -20,12 +20,12 @@ func NewNoteCRUDUseCase(notesRepo ports.NotesRepo) *NoteUseCase {
 }
 
 // GetNotesByUserID returns a list of notes for the specified user by their ID.
-func (u *NoteUseCase) GetNotesByUserID(userID uint) ([]models.Note, error) {
+func (u *NoteUseCase) GetNotesByUserID(userID uuid.UUID) ([]models.Note, error) {
 	return u.notesRepo.GetNotesByUserID(userID)
 }
 
 // GetNoteByID returns a note by its unique ID.
-func (u *NoteUseCase) GetNoteByID(noteID uint) (models.Note, error) {
+func (u *NoteUseCase) GetNoteByID(noteID uint) (models.Note, bool, error) {
 	return u.notesRepo.GetNoteByID(noteID)
 }
 
@@ -64,18 +64,18 @@ func NewUserCRUDUseCase(usersRepo ports.UsersRepo) *UserUseCase {
 }
 
 // GetUserByID returns a user by their unique UUID.
-func (u *UserUseCase) GetUserByID(userID uuid.UUID) (models.User, error) {
+func (u *UserUseCase) GetUserByID(userID uuid.UUID) (models.User, bool, error) {
 	return u.usersRepo.GetUserByID(userID)
 }
 
 // GetUserByLogin returns a user by their login.
-func (u *UserUseCase) GetUserByLogin(login string) (models.User, error) {
+func (u *UserUseCase) GetUserByLogin(login string) (models.User, bool, error) {
 	return u.usersRepo.GetUserByLogin(login)
 }
 
 // GetUserByLoginAndPassword searches for a user by login and password.
 // Returns the found user or an error if the user is not found.
-func (u *UserUseCase) GetUserByLoginAndPassword(login string, password string) (models.User, error) {
+func (u *UserUseCase) GetUserByLoginAndPassword(login string, password string) (models.User, bool, error) {
 	return u.usersRepo.GetUserByLoginAndPassword(login, password)
 }
 

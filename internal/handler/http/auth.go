@@ -1,6 +1,7 @@
 package http
 
 import (
+	"errors"
 	"github.com/gofiber/fiber/v2"
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/google/uuid"
@@ -13,9 +14,10 @@ import (
 
 // AuthUseCase Use case interface required for JWTHandler
 type AuthUseCase interface {
-	GetUserByID(userID uuid.UUID) (models.User, error)
+	GetUserByID(userID uuid.UUID) (models.User, bool, error)
 	CreateUser(user models.User) (models.User, error)
-	GetUserByLoginAndPassword(login string, password string) (models.User, error)
+	GetUserByLogin(login string) (models.User, bool, error)
+	GetUserByLoginAndPassword(login string, password string) (models.User, bool, error)
 }
 
 // JWTHandler is the auth header for fiber application.
@@ -49,35 +51,46 @@ func (h *JWTHandler) JWTMiddleware() fiber.Handler {
 		}
 
 		tokenString := authHeader[len("Bearer "):]
-		token, err := jwtutils.ValidateToken(tokenString, h.secretKey)
-		if err != nil || !token.Valid {
-			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "invalid token"})
-		}
-
-		claims, ok := token.Claims.(jwt.MapClaims)
-		if !ok {
-			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "invalid token claims"})
-		}
-
-		tokenType, ok := claims["type"].(string)
-		if !ok || tokenType != "access" {
-			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "token type must be access"})
-		}
-
-		userIDString, ok := claims["sub"].(string)
-		userID, err := uuid.Parse(userIDString)
-		if !ok || err != nil {
-			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "invalid user ID in token"})
-		}
-
-		_, err = h.useCase.GetUserByID(userID)
+		userID, _, err := h.runChecksForTokenString(tokenString, "access")
 		if err != nil {
-			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "can't find user with given user ID"})
+			return NotAuthenticatedError(c, err)
 		}
 
 		c.Locals("userID", userID)
 		return c.Next()
 	}
+}
+
+func (h *JWTHandler) runChecksForTokenString(tokenString string, requiredTokenType string) (uuid.UUID, string, error) {
+	token, err := jwtutils.ValidateToken(tokenString, h.secretKey)
+	if err != nil || !token.Valid {
+		return uuid.UUID{}, "", errors.New("invalid token")
+	}
+
+	claims, ok := token.Claims.(jwt.MapClaims)
+	if !ok {
+		return uuid.UUID{}, "", errors.New("invalid token claims")
+	}
+
+	tokenType, ok := claims["type"].(string)
+	if !ok || tokenType != requiredTokenType {
+		return uuid.UUID{}, "", errors.New("token type must be " + requiredTokenType)
+	}
+
+	userIDString, ok := claims["sub"].(string)
+	userID, err := uuid.Parse(userIDString)
+	if !ok || err != nil {
+		return uuid.UUID{}, "", errors.New("invalid user ID in token")
+	}
+
+	userLogin := claims["username"].(string)
+
+	// user, userFound, err := h.useCase.GetUserByID(userID)
+	// if !userFound || err != nil {
+	// 	return models.User{}, errors.New("can't find user with given user ID")
+	// }
+
+	return userID, userLogin, nil
 }
 
 func (h *JWTHandler) parseUser(c *fiber.Ctx) (models.User, error) {
@@ -93,10 +106,10 @@ func (h *JWTHandler) parseUser(c *fiber.Ctx) (models.User, error) {
 	return user, nil
 }
 
-func (h *JWTHandler) createTokensForUser(user models.User) (fiber.Map, error) {
+func (h *JWTHandler) createTokensForUser(userID uuid.UUID, userLogin string) (fiber.Map, error) {
 	accessToken, err := jwtutils.GenerateToken(
-		user.ID,
-		user.Login,
+		userID,
+		userLogin,
 		"access",
 		h.accessTokenLifetime,
 		h.secretKey,
@@ -106,8 +119,8 @@ func (h *JWTHandler) createTokensForUser(user models.User) (fiber.Map, error) {
 	}
 
 	refreshToken, err := jwtutils.GenerateToken(
-		user.ID,
-		user.Login,
+		userID,
+		userLogin,
 		"refresh",
 		h.refreshTokenLifetime,
 		h.secretKey,
@@ -122,10 +135,19 @@ func (h *JWTHandler) createTokensForUser(user models.User) (fiber.Map, error) {
 	}, nil
 }
 
+// SignUpHandler HTTP handler for creating a new user and retrieving a new token
 func (h *JWTHandler) SignUpHandler(c *fiber.Ctx) error {
 	user, err := h.parseUser(c)
 	if err != nil {
 		return BadRequest(c, "invalid user data")
+	}
+
+	_, found, err := h.useCase.GetUserByLogin(user.Login)
+	if err != nil {
+		return InternalServerError(c, err)
+	}
+	if found {
+		return BadRequest(c, "username already exists")
 	}
 
 	createdUser, err := h.useCase.CreateUser(user)
@@ -133,7 +155,7 @@ func (h *JWTHandler) SignUpHandler(c *fiber.Ctx) error {
 		return InternalServerError(c, err)
 	}
 
-	returnData, err := h.createTokensForUser(createdUser)
+	returnData, err := h.createTokensForUser(createdUser.ID, createdUser.Login)
 	if err != nil {
 		return InternalServerError(c, err)
 	}
@@ -141,21 +163,47 @@ func (h *JWTHandler) SignUpHandler(c *fiber.Ctx) error {
 	return c.Status(fiber.StatusOK).JSON(returnData)
 }
 
-func (h *JWTHandler) Login(c *fiber.Ctx) error {
+// SignInHandler HTTP Handler for retrieving a new token by login and password
+func (h *JWTHandler) SignInHandler(c *fiber.Ctx) error {
 	user, err := h.parseUser(c)
 	if err != nil {
 		return BadRequest(c, "invalid user data")
 	}
 
-	foundUser, err := h.useCase.GetUserByLoginAndPassword(user.Login, user.Password)
+	foundUser, userFound, err := h.useCase.GetUserByLoginAndPassword(user.Login, user.Password)
 	if err != nil {
-		return NotAuthenticatedError(c)
+		return InternalServerError(c, err)
+	}
+	if !userFound {
+		return NotAuthenticatedError(c, errors.New("user not found"))
 	}
 
-	returnData, err := h.createTokensForUser(foundUser)
+	returnData, err := h.createTokensForUser(foundUser.ID, foundUser.Login)
 	if err != nil {
 		return InternalServerError(c, err)
 	}
 
 	return c.JSON(returnData)
+}
+
+// RefreshHandler HTTP handler for refreshing JWT's
+func (h *JWTHandler) RefreshHandler(c *fiber.Ctx) error {
+	var body schemas.RefreshTokenSchema
+	if err := c.BodyParser(&body); err != nil {
+		return BadRequest(c, "invalid refresh token data")
+	}
+
+	tokenString := body.RefreshToken
+
+	userID, userLogin, err := h.runChecksForTokenString(tokenString, "refresh")
+	if err != nil {
+		return NotAuthenticatedError(c, err)
+	}
+
+	returnData, err := h.createTokensForUser(userID, userLogin)
+	if err != nil {
+		return InternalServerError(c, err)
+	}
+
+	return c.Status(fiber.StatusOK).JSON(returnData)
 }
